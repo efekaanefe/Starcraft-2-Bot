@@ -9,43 +9,60 @@ from sc2.bot_ai import BotAI
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
 
-class MyDeadlyBot(BotAI):
-    async def on_step(self, iteration: int):
-        print("Iteration: ", iteration)
 
-        if iteration == 0:
-            for worker in self.workers:
-                worker.attack(self.enemy_start_locations[0])
-        self.make_drone()
-        self.build_spawning_pool()
+SCV = UnitTypeId.SCV
+
+class MyDeadlyTerranBot(BotAI):
+    async def on_step(self, iteration):
+        await self.build_workers()
+        await self.build_supply_depots()
+        await self.build_barracks()
+        await self.train_marines()
+        await self.attack_enemy()
+
+    async def build_workers(self):
+        if self.can_afford(UnitTypeId.SCV) and self.units(UnitTypeId.SCV).amount < 16:
+            command_centers = self.townhalls.ready
+            for cc in command_centers:
+                if self.can_afford(UnitTypeId.SCV) and cc.is_idle:
+                    self.do(cc.train(UnitTypeId.SCV))
+
+    async def build_supply_depots(self):
+        if self.supply_left < 5 and not self.already_pending(UnitTypeId.SUPPLYDEPOT):
+            command_centers = self.townhalls.ready
+            if command_centers.exists:
+                if self.can_afford(UnitTypeId.SUPPLYDEPOT):
+                    await self.build(UnitTypeId.SUPPLYDEPOT, near=command_centers.first)
+
+    async def build_barracks(self):
+        if self.can_afford(UnitTypeId.BARRACKS) and self.units(UnitTypeId.BARRACKS).amount < 3:
+            command_centers = self.townhalls.ready
+            if command_centers.exists:
+                if self.can_afford(UnitTypeId.BARRACKS):
+                    await self.build(UnitTypeId.BARRACKS, near=command_centers.first)
+
+    async def train_marines(self):
+        barracks = self.units(UnitTypeId.BARRACKS).ready
+        for barrack in barracks:
+            if self.can_afford(UnitTypeId.MARINE) and barrack.is_idle:
+                self.do(barrack.train(UnitTypeId.MARINE))
+
+    async def attack_enemy(self):
+        if self.units(UnitTypeId.MARINE).amount >= 10:
+            target = self.enemy_start_locations[0]
+            marines = self.units(UnitTypeId.MARINE)
+            for marine in marines:
+                self.do(marine.attack(target))
 
 
-    def make_drone(self):
-        print(f"You have{len(self.larva)}")
-        print(f"Army: {self.army_count}")
-        for loop_larva in self.larva:
-            if self.can_afford(UnitTypeId.DRONE):
-                loop_larva.train(UnitTypeId.DRONE)
-                # Add break statement here if you only want to train one
-            else:
-                # Can't afford drones anymore
-                break
 
-    async def build_spawning_pool(self):
-        if self.can_afford(UnitTypeId.SPAWNINGPOOL) and self.already_pending(UnitTypeId.SPAWNINGPOOL) + self.structures.filter(lambda structure: structure.type_id == UnitTypeId.SPAWNINGPOOL and structure.is_ready).amount == 0:
-            worker_candidates = self.workers.filter(lambda worker: (worker.is_collecting or worker.is_idle) and worker.tag not in self.unit_tags_received_action)
-    # Worker_candidates can be empty
-            if worker_candidates:
-                map_center = self.game_info.map_center
-                position_towards_map_center = self.start_location.towards(map_center, distance=5)
-                placement_position = await self.find_placement(UnitTypeId.SPAWNINGPOOL, near=position_towards_map_center, placement_step=1)
-        # Placement_position can be None
-                if placement_position:
-                    build_worker = worker_candidates.closest_to(placement_position)
-                build_worker.build(UnitTypeId.SPAWNINGPOOL, placement_position)
+
+
+
     
 
 run_game(maps.get("AcropolisLE"), [
-    Bot(Race.Zerg, MyDeadlyBot()),
+    Bot(Race.Terran, MyDeadlyTerranBot()),
     Computer(Race.Protoss, Difficulty.Medium)
 ], realtime=False)
+
