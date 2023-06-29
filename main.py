@@ -9,29 +9,71 @@ from sc2.bot_ai import BotAI
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
 
+import random
 
 SCV = UnitTypeId.SCV
 
 class MyDeadlyTerranBot(BotAI):
+
+    def __init__(self):
+        self.ITERATIONS_PER_MINUTE = 165
+        self.MAX_WORKERS = 50
+
     async def on_step(self, iteration):
-
-
+        self.iteration = iteration
+        await self.distribute_workers()
         await self.build_workers()
+        await self.assign_idle_scv_to_minerals() 
         await self.build_supply_depots()
         await self.build_refinery()
+        await self.expand()
         await self.assign_scv_to_refinery()
         await self.build_barracks()
         await self.train_marines()
+        await self.build_factory()
+        await self.train_hellions()
         await self.attack_enemy()
 
-
-
     async def build_workers(self):
-        if self.can_afford(UnitTypeId.SCV) and self.units(UnitTypeId.SCV).amount < 16:
+        needed_workers = self.structures(UnitTypeId.COMMANDCENTER).amount*16
+        if self.can_afford(UnitTypeId.SCV) and self.units(UnitTypeId.SCV).amount < min(needed_workers,self.MAX_WORKERS):
             command_centers = self.townhalls.ready
             for cc in command_centers:
                 if self.can_afford(UnitTypeId.SCV) and cc.is_idle:
                     self.do(cc.train(UnitTypeId.SCV))
+
+    async def assign_idle_scv_to_minerals(self):
+        command_centers = self.structures(UnitTypeId.COMMANDCENTER).owned
+        idle_workers = self.units(UnitTypeId.SCV).owned.idle
+
+        for worker in idle_workers:
+            assigned_command_center = None
+            for cc in command_centers:
+                if cc.assigned_harvesters < cc.ideal_harvesters:
+                    assigned_command_center = cc
+                    break
+
+            if assigned_command_center is None:
+                await self.create_new_command_center(worker.position)
+                return
+
+            if assigned_command_center:
+                mineral_field = self.mineral_field.closest_to(assigned_command_center)
+
+            if mineral_field.assigned_harvesters > mineral_field.ideal_harvesters:
+                excessive_workers = self.workers.filter(lambda w: w.is_gathering and w.gathering.target == mineral_field)
+                if excessive_workers:
+                    self.do(excessive_workers.random.stop())
+                    self.do(worker.gather(mineral_field))
+                else:
+                    self.do(worker.gather(mineral_field))
+            else:
+                self.do(worker.gather(mineral_field))
+
+
+    async def create_new_command_center(self, position):
+        if self.can_afford(UnitTypeId.COMMANDCENTER):
+            await self.build(UnitTypeId.COMMANDCENTER, near=position)
 
     async def build_supply_depots(self):
         if self.supply_left < 10:
@@ -41,9 +83,9 @@ class MyDeadlyTerranBot(BotAI):
                     if self.can_afford(UnitTypeId.SUPPLYDEPOT):
                         await self.build(UnitTypeId.SUPPLYDEPOT, near=command_centers.first)
 
-
     async def build_refinery(self):
-        if self.structures(UnitTypeId.REFINERY).amount < 2:
+        ccs_amount = self.structures(UnitTypeId.COMMANDCENTER).ready.amount
+        if self.structures(UnitTypeId.REFINERY).amount < ccs_amount*2:
             if self.can_afford(UnitTypeId.REFINERY):
                 for command_center in self.structures(UnitTypeId.COMMANDCENTER).ready:
                     vespene_geysers = self.vespene_geyser.closer_than(15, command_center)
@@ -64,6 +106,10 @@ class MyDeadlyTerranBot(BotAI):
                     worker = workers.closest_to(refinery)
                     self.do(worker.gather(refinery))
 
+    async def expand(self):
+        if (self.structures(UnitTypeId.COMMANDCENTER).amount < 4 # (self.iteration / self.ITERATIONS_PER_MINUTE) 
+            and self.can_afford(UnitTypeId.COMMANDCENTER)):
+            await self.expand_now()
 
     async def build_barracks(self):
         if self.structures(UnitTypeId.BARRACKS).amount < 3:
@@ -81,17 +127,37 @@ class MyDeadlyTerranBot(BotAI):
             if self.can_afford(UnitTypeId.MARINE) and barrack.is_idle:
                 self.do(barrack.train(UnitTypeId.MARINE))
 
+    async def build_factory(self):
+        if self.structures(UnitTypeId.BARRACKS).ready:
+            if self.structures(UnitTypeId.FACTORY).amount < 3 and not self.already_pending(UnitTypeId.FACTORY):
+                cc = self.townhalls.ready.first
+                if self.can_afford(UnitTypeId.FACTORY):
+                    position = cc.position.towards_with_random_angle(self.game_info.map_center, 16)
+                    await self.build(UnitTypeId.FACTORY, near=position)
+
+    async def train_hellions(self):
+        factories = self.structures(UnitTypeId.FACTORY)
+        for factory in factories:
+            if self.can_afford(UnitTypeId.HELLION) and factory.is_idle:
+                self.do(factory.train(UnitTypeId.HELLION))
+
+
     async def attack_enemy(self):
-        if self.units(UnitTypeId.MARINE).idle.amount >= 30:
+
+        if (self.units(UnitTypeId.MARINE).idle.amount >= 30 and self.units(UnitTypeId.HELLION).idle.amount >= 30
+                or len(self.enemy_units) > 0):
             target = self.enemy_start_locations[0]
             marines = self.units(UnitTypeId.MARINE)
+            hellions = self.units(UnitTypeId.HELLION)
             for marine in marines:
                 self.do(marine.attack(target))
+            for hellion in hellions:
+                self.do(hellion.attack(target))
 
 
 
 run_game(maps.get("AcropolisLE"), [
     Bot(Race.Terran, MyDeadlyTerranBot()),
-    Computer(Race.Protoss, Difficulty.Medium)
+    Computer(Race.Zerg, Difficulty.Hard)
 ], realtime=False)
 
