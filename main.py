@@ -32,6 +32,8 @@ class MyDeadlyTerranBot(BotAI):
         await self.train_marines()
         await self.build_factory()
         await self.train_hellions()
+        await self.build_starport()
+        await self.train_vikings()
         await self.attack_enemy()
 
     async def build_workers(self):
@@ -81,7 +83,8 @@ class MyDeadlyTerranBot(BotAI):
                 command_centers = self.townhalls.ready
                 if command_centers.exists:
                     if self.can_afford(UnitTypeId.SUPPLYDEPOT):
-                        await self.build(UnitTypeId.SUPPLYDEPOT, near=command_centers.first)
+                        position = command_centers.first.position.towards_with_random_angle(self.game_info.map_center, 16)
+                        await self.build(UnitTypeId.SUPPLYDEPOT, near=position)
 
     async def build_refinery(self):
         ccs_amount = self.structures(UnitTypeId.COMMANDCENTER).ready.amount
@@ -117,15 +120,8 @@ class MyDeadlyTerranBot(BotAI):
                 command_centers = self.townhalls.ready
                 if command_centers.exists:
                     if self.can_afford(UnitTypeId.BARRACKS) and not self.already_pending(UnitTypeId.BARRACKS):
-                        map_center = self.game_info.map_center
-                        placement_position = self.start_location.towards(map_center, distance=5)
-                        await self.build(UnitTypeId.BARRACKS, near=placement_position)
-
-    async def train_marines(self):
-        barracks = self.structures(UnitTypeId.BARRACKS)
-        for barrack in barracks:
-            if self.can_afford(UnitTypeId.MARINE) and barrack.is_idle:
-                self.do(barrack.train(UnitTypeId.MARINE))
+                        position = command_centers.first.position.towards_with_random_angle(self.game_info.map_center, 16)
+                        await self.build(UnitTypeId.BARRACKS, near=position)
 
     async def build_factory(self):
         if self.structures(UnitTypeId.BARRACKS).ready:
@@ -135,29 +131,61 @@ class MyDeadlyTerranBot(BotAI):
                     position = cc.position.towards_with_random_angle(self.game_info.map_center, 16)
                     await self.build(UnitTypeId.FACTORY, near=position)
 
+    async def build_starport(self):
+        if self.structures(UnitTypeId.STARPORT).amount < 3 and not self.already_pending(UnitTypeId.STARPORT):
+            cc = self.townhalls.ready.first
+            if self.can_afford(UnitTypeId.STARPORT):
+                position = cc.position.towards_with_random_angle(self.game_info.map_center, 16)
+                await self.build(UnitTypeId.STARPORT, near=position)
+
+
+    async def train_marines(self):
+        barracks = self.structures(UnitTypeId.BARRACKS)
+        for barrack in barracks:
+            if self.can_afford(UnitTypeId.MARINE) and barrack.is_idle:
+                self.do(barrack.train(UnitTypeId.MARINE))
+
+
     async def train_hellions(self):
         factories = self.structures(UnitTypeId.FACTORY)
         for factory in factories:
             if self.can_afford(UnitTypeId.HELLION) and factory.is_idle:
                 self.do(factory.train(UnitTypeId.HELLION))
 
+    async def train_vikings(self):
+        starports = self.structures(UnitTypeId.STARPORT)
+        for starport in starports:
+            if self.can_afford(UnitTypeId.VIKINGASSAULT) and starport.is_idle:
+                self.do(starport.train(UnitTypeId.VIKINGASSAULT))
+
 
     async def attack_enemy(self):
-
-        if (self.units(UnitTypeId.MARINE).idle.amount >= 30 and self.units(UnitTypeId.HELLION).idle.amount >= 30
-                or len(self.enemy_units) > 0):
-            target = self.enemy_start_locations[0]
-            marines = self.units(UnitTypeId.MARINE)
-            hellions = self.units(UnitTypeId.HELLION)
+        def attack(target):
             for marine in marines:
                 self.do(marine.attack(target))
             for hellion in hellions:
                 self.do(hellion.attack(target))
+            for viking in vikings:
+                self.do(viking.attack(target))
+
+        marines = self.units(UnitTypeId.MARINE)
+        hellions = self.units(UnitTypeId.HELLION)
+        vikings = self.units(UnitTypeId.VIKING)
+
+        if len(self.enemy_units) > 0:
+            target = random.choice(self.enemy_units)
+            attack(target)
+            
+        if self.units(UnitTypeId.MARINE).idle.amount >= 50:
+            target = self.enemy_start_locations[0]
+            attack(target)
+
+        
 
 
 
 run_game(maps.get("AcropolisLE"), [
     Bot(Race.Terran, MyDeadlyTerranBot()),
-    Computer(Race.Zerg, Difficulty.Hard)
+    Computer(Race.Terran, Difficulty.Hard)
 ], realtime=False)
 
