@@ -26,8 +26,8 @@ class MyDeadlyTerranBot(BotAI):
         await self.assign_idle_scv_to_minerals() 
         await self.build_supply_depots()
         await self.build_refinery()
-        await self.expand()
         await self.assign_scv_to_refinery()
+        await self.expand()
         await self.build_barracks()
         await self.train_marines()
         await self.build_factory()
@@ -72,7 +72,6 @@ class MyDeadlyTerranBot(BotAI):
             else:
                 self.do(worker.gather(mineral_field))
 
-
     async def create_new_command_center(self, position):
         if self.can_afford(UnitTypeId.COMMANDCENTER):
             await self.build(UnitTypeId.COMMANDCENTER, near=position)
@@ -113,6 +112,14 @@ class MyDeadlyTerranBot(BotAI):
         if (self.structures(UnitTypeId.COMMANDCENTER).amount < 4 # (self.iteration / self.ITERATIONS_PER_MINUTE) 
             and self.can_afford(UnitTypeId.COMMANDCENTER)):
             await self.expand_now()
+
+
+    async def build_offensive_buildings(self):
+        pass
+
+
+    async def train_offensive_units(self):
+        pass
 
     async def build_barracks(self):
         if self.structures(UnitTypeId.BARRACKS).amount < 3:
@@ -179,10 +186,6 @@ class MyDeadlyTerranBot(BotAI):
         if self.units(UnitTypeId.MARINE).idle.amount >= 50:
             target = self.enemy_start_locations[0]
             attack(target)
-
-        
-
-
 
 run_game(maps.get("AcropolisLE"), [
     Bot(Race.Terran, MyDeadlyTerranBot()),
